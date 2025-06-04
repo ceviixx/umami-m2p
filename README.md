@@ -2,11 +2,15 @@
 # Umami MySQL to PostgreSQL Migration Tool
 This tool enables the migration of [Umami](https://github.com/umami-software/umami) data from an existing **MySQL database** to a new, **empty PostgreSQL database**.
 
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Migration](https://img.shields.io/badge/Migration-MySQL→PostgreSQL-green)
+
 > [!CAUTION]  
 > This migration script was developed for a specific migration scenario and tested successfully with Umami version **2.18.1**.  
 > It is provided as-is and **without any warranty**.  
 > The authors do not take responsibility for data loss, corruption, or compatibility issues.  
 > Always back up your data and test the process thoroughly in a **staging environment** before using it in production.
+
 
 <br><br>
 
