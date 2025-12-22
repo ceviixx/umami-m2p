@@ -47,7 +47,7 @@ def migrate(mysql_cursor, postgres_cursor):
                 %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s
             )
