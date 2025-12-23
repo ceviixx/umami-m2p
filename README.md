@@ -3,13 +3,14 @@
 
 Migrate your [Umami Analytics](https://github.com/umami-software/umami) installation from **MySQL** to **PostgreSQL** with ease.
 
+[![Test Migration](https://github.com/ceviixx/umami-m2p/actions/workflows/test-migration.yml/badge.svg)](https://github.com/ceviixx/umami-m2p/actions/workflows/test-migration.yml)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![Migration](https://img.shields.io/badge/Migration-MySQL→PostgreSQL-green)
-![Umami](https://img.shields.io/badge/Umami-2.18.1-orange)
+![Umami](https://img.shields.io/badge/Umami-mysql--latest-orange)
+![Tested](https://img.shields.io/badge/Tested%20with-Umami%202.18.1-success)
 
 > [!CAUTION]  
 > **Important Safety Information**
-> - This tool was developed and tested with Umami version **2.18.1**
 > - Provided as-is **without any warranty**
 > - **Always create a backup** of your MySQL database before starting
 > - **Test thoroughly in a staging environment** before production use

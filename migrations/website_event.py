@@ -37,7 +37,7 @@ def migrate(mysql_cursor, postgres_cursor):
         postgres_cursor.execute(
             """
             INSERT INTO website_event (
-                id, website_id, session_id, created_at, url_path, url_query,
+                event_id, website_id, session_id, created_at, url_path, url_query,
                 referrer_path, referrer_query, referrer_domain, page_title,
                 event_type, event_name, visit_id, tag, fbclid, gclid,
                 li_fat_id, msclkid, ttclid, twclid, utm_campaign,

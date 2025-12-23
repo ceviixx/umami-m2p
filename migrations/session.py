@@ -22,7 +22,7 @@ def migrate(mysql_cursor, postgres_cursor):
 
         postgres_cursor.execute("""
             INSERT INTO session (
-                id, website_id, browser, os, device, screen, language,
+                session_id, website_id, browser, os, device, screen, language,
                 country, region, city, created_at, distinct_id
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (

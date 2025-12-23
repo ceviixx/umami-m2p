@@ -1,0 +1,230 @@
+name: Test Migration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Pull Docker images
+      run: |
+        docker pull ghcr.io/umami-software/umami:mysql-latest &
+        docker pull mysql:8.0 &
+        docker pull postgres:15-alpine &
+        wait
+    
+    - name: Set up Umami with Docker Compose
+      run: |
+        # Create docker-compose.yml for Umami with MySQL and PostgreSQL
+        cat > docker-compose.yml << 'EOF'
+        services:
+          umami:
+            container_name: umami-test
+            image: ghcr.io/umami-software/umami:mysql-latest
+            network_mode: host
+            environment:
+              DATABASE_URL: mysql://umami:umami@localhost:3306/umami
+              DATABASE_TYPE: mysql
+              APP_SECRET: test-secret-key-for-github-actions
+            depends_on:
+              db:
+                condition: service_healthy
+          db:
+            container_name: mysql-test
+            image: mysql:8.0
+            network_mode: host
+            environment:
+              MYSQL_ROOT_PASSWORD: root
+              MYSQL_DATABASE: umami
+              MYSQL_USER: umami
+              MYSQL_PASSWORD: umami
+            volumes:
+              - umami-db-data:/var/lib/mysql
+            healthcheck:
+              test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+              interval: 10s
+              timeout: 5s
+              retries: 5
+          postgres:
+            container_name: postgres-test
+            image: postgres:15-alpine
+            network_mode: host
+            environment:
+              POSTGRES_DB: umami_test
+              POSTGRES_USER: umami
+              POSTGRES_PASSWORD: umami
+            healthcheck:
+              test: ["CMD", "pg_isready", "-U", "umami"]
+              interval: 10s
+              timeout: 5s
+              retries: 5
+        volumes:
+          umami-db-data:
+        EOF
+        
+        # Start all services
+        docker compose up -d
+        
+        # Wait for MySQL to be ready
+        echo "Waiting for MySQL..."
+        until docker exec mysql-test mysqladmin ping -h localhost --silent; do
+          sleep 2
+        done
+        echo "MySQL ready!"
+        
+        # Wait for PostgreSQL to be ready
+        echo "Waiting for PostgreSQL..."
+        until docker exec postgres-test pg_isready -U umami; do
+          sleep 2
+        done
+        echo "PostgreSQL ready!"
+        
+        # Wait for Umami to initialize database
+        echo "Waiting for Umami to initialize..."
+        sleep 20
+    
+    - name: Create test website
+      run: |
+        # Create a website entry in the database
+        echo "Creating test website..."
+        docker exec mysql-test mysql -u umami -pumami umami -e "
+          INSERT INTO website (website_id, name, domain, created_at, updated_at) 
+          VALUES (UUID(), 'test-website', 'localhost', NOW(), NOW());
+        "
+        
+        # Get the website ID
+        WEBSITE_ID=$(docker exec mysql-test mysql -u umami -pumami umami -sN -e "SELECT website_id FROM website LIMIT 1;")
+        echo "Website ID: $WEBSITE_ID"
+        echo "WEBSITE_ID=$WEBSITE_ID" >> $GITHUB_ENV
+    
+    - name: Send test events
+      run: |
+        # Send test events to generate data
+        echo "Sending test events..."
+        for i in {1..3}; do
+          curl -s -X POST http://localhost:3000/api/send \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            -d "{
+              \"payload\": {
+                \"hostname\": \"localhost\",
+                \"language\": \"en-US\",
+                \"referrer\": \"\",
+                \"screen\": \"1920x1080\",
+                \"title\": \"Test Page $i\",
+                \"url\": \"/test-$i\",
+                \"website\": \"$WEBSITE_ID\",
+                \"name\": \"test-event-$i\"
+              },
+              \"type\": \"event\"
+            }" > /dev/null && echo "✅ Event $i sent" || echo "❌ Event $i failed"
+        done
+        
+        echo "Test data generation complete"
+    
+    - name: Create .env file for migration
+      run: |
+        cat > .env << EOF
+        MYSQL_HOST=localhost
+        MYSQL_PORT=3306
+        MYSQL_DATABASE=umami
+        MYSQL_USER=umami
+        MYSQL_PASSWORD=umami
+        
+        POSTGRES_HOST=localhost
+        POSTGRES_PORT=5432
+        POSTGRES_DATABASE=umami_test
+        POSTGRES_USER=umami
+        POSTGRES_PASSWORD=umami
+        EOF
+    
+    - name: Run migration
+      env:
+        MYSQL_HOST: localhost
+        MYSQL_PORT: "3306"
+        MYSQL_DATABASE: umami
+        MYSQL_USER: umami
+        MYSQL_PASSWORD: umami
+        POSTGRES_HOST: localhost
+        POSTGRES_PORT: "5432"
+        POSTGRES_DATABASE: umami_test
+        POSTGRES_USER: umami
+        POSTGRES_PASSWORD: umami
+      run: |
+        # Run migration in non-interactive mode
+        echo -e "\ny" | python migrate.py
+    
+    - name: Verify migration
+      run: |
+        python -c "
+        import psycopg2
+        import os
+        
+        conn = psycopg2.connect(
+            host='localhost',
+            port=5432,
+            database='umami_test',
+            user='umami',
+            password='umami'
+        )
+        
+        cur = conn.cursor()
+        
+        # Check if all expected tables exist
+        expected_tables = [
+            '_prisma_migrations', 'user', 'team', 'team_user', 
+            'website', 'session', 'website_event', 'event_data',
+            'session_data', 'report', 'revenue', 'segment'
+        ]
+        
+        cur.execute('''
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        ''')
+        
+        actual_tables = [row[0] for row in cur.fetchall()]
+        
+        missing_tables = [t for t in expected_tables if t not in actual_tables]
+        
+        if missing_tables:
+            print(f'❌ Missing tables: {missing_tables}')
+            exit(1)
+        
+        # Check row counts
+        print('\\n📊 Row counts:')
+        for table in expected_tables:
+            cur.execute(f'SELECT COUNT(*) FROM \"{table}\"')
+            count = cur.fetchone()[0]
+            print(f'  {table}: {count}')
+        
+        # Verify tables exist
+        cur.execute('SELECT COUNT(*) FROM \"_prisma_migrations\"')
+        migration_count = cur.fetchone()[0]
+        
+        if migration_count < 1:
+            print('❌ No Prisma migrations found')
+            exit(1)
+        
+        print('\\n✅ Migration verification successful!')
+        
+        cur.close()
+        conn.close()
+        "
